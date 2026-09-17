@@ -182,6 +182,18 @@ bool wiringSolved = false;
 bool finalArchiveRecovered = false;
 bool escapeReady = false;
 
+// ---------- Deep Space Array ----------
+int wiringStep = 0;
+const int wiringSequence[4] = {1, 3, 2, 4};
+
+// ---------- Electrical Arc Sprite ----------
+Texture2D arcTexture = {0};
+int arcFrame = 0;
+float arcFrameTimer = 0.0f;
+const int ARC_FRAME_COUNT = 12;
+const int ARC_FRAME_SIZE = 150;
+const float ARC_FRAME_TIME = 0.06f;
+
 // Inventory
 int metal = 0;
 int circuits = 0;
@@ -631,14 +643,96 @@ void DrawRoomBase(int level)
             DrawText("ATMOSPHERE: UNSTABLE", 600, 450, 14, COL_WARNING);
             break;
 
+        
         case COMMUNICATIONS:
-            DrawCircleLines(720, 255, 75, COL_CYAN);
-            DrawCircleLines(720, 255, 115, WithAlpha(COL_CYAN, 70));
-            DrawCircleLines(720, 255, 150, WithAlpha(COL_GREEN, 40));
-            DrawLine(230, 255, 320, 190, COL_CYAN);
-            DrawLine(230, 255, 320, 320, COL_CYAN);
-            DrawText("DEEP SPACE ARRAY", 620, 430, 15, COL_CYAN);
-            break;
+{
+    Color arrayColor = wiringSolved ? COL_GREEN : COL_CYAN;
+
+    // Main array rings
+    DrawCircleLines(720, 255, 75, arrayColor);
+    DrawCircleLines(720, 255, 115,
+                    WithAlpha(arrayColor, 70));
+    DrawCircleLines(720, 255, 150,
+                    WithAlpha(wiringSolved ? COL_GREEN : COL_CYAN, 40));
+
+    // Array dish
+    DrawCircle(720, 255, 48, COL_DARK_METAL);
+    DrawCircleLines(720, 255, 48, COL_METAL);
+
+    // Rotating dish spokes
+    for (int i = 0; i < 8; ++i)
+    {
+        float a = i * (PI / 4.0f) + gameTime * 0.25f;
+
+        Vector2 a1 = {
+            720 + cosf(a) * 15,
+            255 + sinf(a) * 15
+        };
+
+        Vector2 a2 = {
+            720 + cosf(a) * 43,
+            255 + sinf(a) * 43
+        };
+
+        DrawLineEx(a1, a2, 3, arrayColor);
+    }
+
+    // Central receiver
+    DrawCircle(720, 255, 10,
+               wiringSolved ? COL_GREEN : COL_CYAN);
+
+    DrawCircle(720, 255, 4, COL_WHITE);
+
+    // Signal pulse after restoration
+    if (wiringSolved)
+    {
+        float pulse = fmodf(gameTime * 80.0f, 150.0f);
+
+        DrawCircleLines(
+            720,
+            255,
+            pulse,
+            WithAlpha(COL_GREEN,
+                      (unsigned char)(150 - pulse))
+        );
+
+        DrawText("SIGNAL LOCK",
+                 665, 340, 11, COL_GREEN);
+
+        DrawText("[ARRAY ONLINE]",
+                 650, 360, 11, COL_GREEN);
+    }
+    else
+    {
+        // Broken signal indicators
+        for (int i = 0; i < 5; ++i)
+        {
+            float y = 185 + i * 20;
+
+            DrawLineEx(
+                {790, y},
+                {815 + sinf(gameTime * 5 + i) * 10, y},
+                2,
+                COL_DANGER
+            );
+        }
+
+        DrawText("SIGNAL CORRUPTED",
+                 645, 340, 11, COL_DANGER);
+
+        DrawText("[E] RECONSTRUCT",
+                 635, 360, 11, COL_CYAN);
+    }
+
+    // Array support arms
+    DrawLine(230, 255, 320, 190, arrayColor);
+    DrawLine(230, 255, 320, 320, arrayColor);
+
+    DrawText("DEEP SPACE ARRAY",
+             620, 430, 15, arrayColor);
+
+    break;
+}
 
         case ADMIN:
             DrawRectangle(560, 145, 270, 85, COL_DARK_METAL);
@@ -723,29 +817,241 @@ void DrawHazard(const Hazard& h)
     }
     else
     {
-        // Electrical hazards get a bright service-panel marker instead of
-        // relying only on thin lightning lines.
-        DrawCircleV(h.pos, h.radius + 8, WithAlpha(COL_CYAN, 18));
-        DrawCircleLines((int)h.pos.x, (int)h.pos.y, h.radius, COL_CYAN);
-        DrawRectangle((int)h.pos.x - 28, (int)h.pos.y - 22, 56, 44, COL_PANEL2);
-        DrawRectangleLines((int)h.pos.x - 28, (int)h.pos.y - 22, 56, 44, COL_CYAN);
-        DrawText("!", (int)h.pos.x - 6, (int)h.pos.y - 15, 28, COL_WARNING);
-        for (int i = 0; i < 4; ++i)
-        {
-            Vector2 a = {h.pos.x - h.radius + i * 20, h.pos.y - 20};
-            Vector2 b = {a.x + 35, a.y + sinf(gameTime * 12 + i) * 15};
-            DrawLineEx(a, b, 4, COL_CYAN);
-        }
-        DrawText("ELECTRICAL // REPAIR KIT", (int)h.pos.x - 65, (int)h.pos.y + h.radius + 12, 10, COL_CYAN);
+    // Electrical hazard with animated 12-frame sprite sheet.
+
+    DrawCircleV(
+        h.pos,
+        h.radius + 12,
+        WithAlpha(COL_CYAN, 18)
+    );
+
+    DrawCircleLines(
+        (int)h.pos.x,
+        (int)h.pos.y,
+        h.radius,
+        COL_CYAN
+    );
+
+    // Draw the current 150x150 frame.
+    if (arcTexture.id > 0)
+    {
+        Rectangle source = {
+            (float)(arcFrame * ARC_FRAME_SIZE),
+            0.0f,
+            (float)ARC_FRAME_SIZE,
+            (float)ARC_FRAME_SIZE
+        };
+
+        Rectangle destination = {
+            h.pos.x - 75,
+            h.pos.y - 75,
+            150,
+            150
+        };
+
+        DrawTexturePro(
+            arcTexture,
+            source,
+            destination,
+            {0, 0},
+            0.0f,
+            WHITE
+        );
     }
+    else
+    {
+        // Fallback if the sprite cannot be loaded.
+        DrawRectangle(
+            (int)h.pos.x - 28,
+            (int)h.pos.y - 22,
+            56,
+            44,
+            COL_PANEL2
+        );
+
+        DrawRectangleLines(
+            (int)h.pos.x - 28,
+            (int)h.pos.y - 22,
+            56,
+            44,
+            COL_CYAN
+        );
+
+        DrawText(
+            "!",
+            (int)h.pos.x - 6,
+            (int)h.pos.y - 15,
+            28,
+            COL_WARNING
+        );
+    }
+
+    DrawText(
+        "ELECTRICAL // REPAIR KIT",
+        (int)h.pos.x - 65,
+        (int)h.pos.y + h.radius + 12,
+        10,
+        COL_CYAN
+    );
+}
 }
 
 void DrawSalvage(const Salvage& s)
 {
     if (s.collected) return;
-    DrawRectangle((int)s.pos.x - 17, (int)s.pos.y - 13, 34, 26, COL_DARK_METAL);
-    DrawRectangleLines((int)s.pos.x - 17, (int)s.pos.y - 13, 34, 26, COL_METAL);
-    DrawText("SALVAGE", (int)s.pos.x - 25, (int)s.pos.y + 20, 9, COL_DIM_GREEN);
+
+    float x = s.pos.x;
+    float y = s.pos.y;
+
+    // Subtle floating motion
+    float bob = sinf(gameTime * 2.5f + x * 0.01f) * 2.0f;
+    y += bob;
+
+    // Soft loot glow
+    float pulse = (sinf(gameTime * 3.0f + x * 0.02f) + 1.0f) * 0.5f;
+
+    BeginBlendMode(BLEND_ADDITIVE);
+    DrawCircleV({x, y}, 30 + pulse * 5,
+                WithAlpha(COL_GREEN, (unsigned char)(18 + pulse * 12)));
+    EndBlendMode();
+
+    // Shadow
+    DrawEllipse((int)x, (int)(y + 17), 25, 7,
+                WithAlpha(BLACK, 100));
+
+    // Main crate body
+    DrawRectangleRounded(
+        {x - 25, y - 19, 50, 38},
+        0.12f,
+        5,
+        COL_DARK_METAL
+    );
+
+    // Outer metal frame
+    DrawRectangleLinesEx(
+        {x - 25, y - 19, 50, 38},
+        2,
+        COL_METAL
+    );
+
+    // Top metal plate
+    DrawRectangle(
+        (int)x - 21,
+        (int)y - 15,
+        42,
+        7,
+        COL_PANEL2
+    );
+
+    DrawLine(
+        (int)x - 20,
+        (int)y - 15,
+        (int)x + 20,
+        (int)y - 15,
+        COL_DIM_GREEN
+    );
+
+    // Vertical reinforcement bars
+    DrawRectangle(
+        (int)x - 22,
+        (int)y - 17,
+        5,
+        34,
+        COL_METAL
+    );
+
+    DrawRectangle(
+        (int)x + 17,
+        (int)y - 17,
+        5,
+        34,
+        COL_METAL
+    );
+
+    // Center cargo panel
+    DrawRectangle(
+        (int)x - 13,
+        (int)y - 8,
+        26,
+        17,
+        COL_PANEL
+    );
+
+    DrawRectangleLines(
+        (int)x - 13,
+        (int)y - 8,
+        26,
+        17,
+        COL_DIM_GREEN
+    );
+
+    // Cargo symbol
+    DrawRectangle(
+        (int)x - 7,
+        (int)y - 4,
+        14,
+        9,
+        COL_DARK_GREEN
+    );
+
+    // Central locking mechanism
+    DrawRectangle(
+        (int)x - 4,
+        (int)y - 2,
+        8,
+        5,
+        COL_METAL
+    );
+
+    DrawCircle(
+        (int)x,
+        (int)y,
+        2,
+        COL_WARNING
+    );
+
+    // Little status lights
+    DrawCircle(
+        (int)x - 15,
+        (int)y + 12,
+        2,
+        COL_GREEN
+    );
+
+    DrawCircle(
+        (int)x + 15,
+        (int)y + 12,
+        2,
+        pulse > 0.5f ? COL_GREEN : COL_DIM_GREEN
+    );
+
+    // Small hazard markings
+    for (int i = -1; i <= 1; ++i)
+    {
+        DrawLineEx(
+            {x + i * 7.0f - 3, y - 13},
+            {x + i * 7.0f + 2, y - 9},
+            2,
+            COL_WARNING
+        );
+    }
+
+    // Loot indicator above crate
+    DrawCircle(
+        (int)x,
+        (int)(y - 29),
+        3,
+        WithAlpha(COL_GREEN, (unsigned char)(100 + pulse * 100))
+    );
+
+    // Label
+    DrawText(
+        "SALVAGE",
+        (int)x - 27,
+        (int)y + 27,
+        9,
+        COL_DIM_GREEN
+    );
 }
 
 void DrawDrone(const Drone& d)
@@ -916,7 +1222,135 @@ void DrawHUD(const Player& p, int level)
         DrawText(statusText, 295, 483, 13, COL_GREEN);
     }
 }
+void DrawWiringScreen()
+{
+    ClearBackground(COL_BG);
+    DrawStarfield();
 
+    DrawRectangle(100, 65, 800, 470, COL_PANEL);
+    DrawRectangleLines(100, 65, 800, 470, COL_CYAN);
+
+    DrawText("DEEP SPACE ARRAY // SIGNAL ROUTING",
+             140, 95, 24, COL_CYAN);
+
+    DrawText("Reconstruct the corrupted transmission path.",
+             140, 130, 13, COL_DIM_GREEN);
+
+    DrawText("Press the numbered nodes in the correct sequence.",
+             140, 155, 13, COL_DIM_GREEN);
+
+    // Central signal core
+    DrawCircle(500, 305, 48, COL_DARK_METAL);
+    DrawCircleLines(500, 305, 48,
+                    wiringStep >= 4 ? COL_GREEN : COL_CYAN);
+
+    DrawCircle(500, 305, 25,
+               wiringStep >= 4 ? COL_GREEN : COL_PANEL2);
+
+    DrawText("ARRAY",
+             474, 298, 11,
+             wiringStep >= 4 ? COL_BG : COL_CYAN);
+
+    // Four routing nodes
+    Vector2 nodes[4] = {
+        {300, 250},
+        {700, 250},
+        {300, 380},
+        {700, 380}
+    };
+
+    for (int i = 0; i < 4; ++i)
+    {
+        int nodeNumber = i + 1;
+
+        bool completed = false;
+
+        // A node is considered completed if its position in the
+        // sequence has already been passed.
+        for (int j = 0; j < wiringStep; ++j)
+        {
+            if (wiringSequence[j] == nodeNumber)
+                completed = true;
+        }
+
+        Color nodeColor = completed ? COL_GREEN : COL_CYAN;
+
+        // Connection to the central array
+        DrawLineEx(nodes[i],
+                   {500, 305},
+                   3,
+                   WithAlpha(nodeColor, completed ? 180 : 70));
+
+        DrawCircleV(nodes[i], 42,
+                    WithAlpha(nodeColor, 20));
+
+        DrawCircleV(nodes[i], 30, COL_PANEL2);
+
+        DrawCircleLines((int)nodes[i].x,
+                        (int)nodes[i].y,
+                        30,
+                        nodeColor);
+
+        DrawText(TextFormat("%d", nodeNumber),
+                 (int)nodes[i].x - 7,
+                 (int)nodes[i].y - 11,
+                 22,
+                 nodeColor);
+
+        DrawText(completed ? "LINKED" : "NODE",
+                 (int)nodes[i].x - 21,
+                 (int)nodes[i].y + 38,
+                 9,
+                 completed ? COL_GREEN : COL_DIM_GREEN);
+    }
+
+    // Current sequence display
+    DrawText("ROUTING:",
+             350, 440, 12, COL_DIM_GREEN);
+
+    for (int i = 0; i < 4; ++i)
+    {
+        int x = 435 + i * 42;
+
+        if (i < wiringStep)
+        {
+            DrawRectangle(x, 436, 30, 24, COL_DARK_GREEN);
+            DrawRectangleLines(x, 436, 30, 24, COL_GREEN);
+
+            DrawText(TextFormat("%d", wiringSequence[i]),
+                     x + 10, 441, 12, COL_GREEN);
+        }
+        else
+        {
+            DrawRectangle(x, 436, 30, 24, COL_PANEL2);
+            DrawRectangleLines(x, 436, 30, 24,
+                               COL_DARK_GREEN);
+
+            DrawText("?",
+                     x + 10, 441, 12, COL_DIM_GREEN);
+        }
+    }
+
+    DrawText("SEQUENCE: 1  →  3  →  2  →  4",
+             355, 475, 12, COL_CYAN);
+
+    DrawText("1-4 = ROUTE NODE",
+             350, 500, 11, COL_GREEN);
+
+    DrawText("ESC = CANCEL",
+             650, 500, 11, COL_DIM_GREEN);
+
+    if (wiringSolved)
+    {
+        DrawRectangle(270, 205, 460, 55,
+                      WithAlpha(COL_GREEN, 25));
+
+        DrawRectangleLines(270, 205, 460, 55, COL_GREEN);
+
+        DrawText("SIGNAL RESTORED // ARRAY ONLINE",
+                 350, 225, 15, COL_GREEN);
+    }
+}
 void DrawCrafting(const Player& p)
 {
     DrawRectangle(105, 65, 790, 470, COL_PANEL);
@@ -1486,7 +1920,11 @@ const char* ObjectiveForRoom(int level)
         case CAFETERIA: return "Clear the mess hall and search for emergency supplies.";
         case MEDICAL: return "Recover XD-series parts from the medical storage bay.";
         case OXYGEN: return "Stabilize oxygen generation and recover power cells.";
-        case COMMUNICATIONS: return "Repair the array and reconstruct the corrupted signal.";
+        case COMMUNICATIONS:
+        if (!wiringSolved)
+        return "Restore the Deep Space Array and reconstruct the corrupted signal.";
+
+        return "Signal restored. Reach the exit.";
         case ADMIN: return "Recover command records and locate the final archive key.";
         case ARCHIVE: return "Recover the ALL-SPARK research package and launch.";
         default: return "Unknown objective.";
@@ -1587,6 +2025,20 @@ void ResetGame(Player& player, GameState& state, int& level)
 int main()
 {
     InitWindow(SCREEN_W, SCREEN_H, "VOID//SIGNAL");
+    arcTexture = LoadTexture("assets/arc_sheet.png");
+
+if (arcTexture.id == 0)
+{
+    TraceLog(LOG_WARNING,
+             "Could not load assets/arc_sheet.png");
+}
+else
+{
+    TraceLog(LOG_INFO,
+             "Electrical arc sprite loaded: %dx%d",
+             arcTexture.width,
+             arcTexture.height);
+}
 
     // Raylib normally uses ESC as the window close key. Disable that so ESC
     // can be handled by the game menus instead (crafting, repair, pause, etc.).
@@ -1605,6 +2057,18 @@ int main()
     {
         float rawDt = GetFrameTime();
         float dt = rawDt;
+        // Electrical arc sprite animation
+        arcFrameTimer += rawDt;
+
+        if (arcFrameTimer >= ARC_FRAME_TIME)
+        {
+        arcFrameTimer -= ARC_FRAME_TIME;
+
+        arcFrame++;
+
+        if (arcFrame >= ARC_FRAME_COUNT)
+        arcFrame = 0;
+}
 
         gameTime += rawDt;
         statusTimer = std::max(0.0f, statusTimer - rawDt);
@@ -1746,19 +2210,34 @@ int main()
                         }
                     }
 
-                    // Environmental repair.
-                    if (!handled)
+                    // Deep Space Array interaction.
+                    // The array becomes available only after all environmental
+                    // hazards in Communications have been repaired.
+                    if (!handled &&
+                    level == COMMUNICATIONS &&
+                    !wiringSolved &&
+                    AllRoomHazardsRepaired() &&
+                    Dist(player.pos, {720, 255}) < 120)
                     {
-                        int before = activeHazard;
-                        if (RepairNearbyHazard(player))
-                        {
-                            if (activeHazard != before)
-                            {
-                                state = REPAIR;
-                                handled = true;
-                            }
-                        }
-                    }
+                    wiringStep = 0;
+                     state = WIRING;
+                     handled = true;
+}
+
+// Environmental repair.
+if (!handled)
+{
+    int before = activeHazard;
+
+    if (RepairNearbyHazard(player))
+    {
+        if (activeHazard != before)
+        {
+            state = REPAIR;
+            handled = true;
+        }
+    }
+}
 
                     // Room exit.
                     if (!handled && Dist(player.pos, {930, 310}) < 90)
@@ -1787,6 +2266,83 @@ int main()
                             handled = true;
                         }
                     }
+                }
+            }
+        }
+        else if (state == WIRING)
+{
+    if (IsKeyPressed(KEY_ESCAPE))
+    {
+        wiringStep = 0;
+        state = PLAYING;
+    }
+
+    int pressedNode = 0;
+
+    if (IsKeyPressed(KEY_ONE))
+        pressedNode = 1;
+
+    if (IsKeyPressed(KEY_TWO))
+        pressedNode = 2;
+
+    if (IsKeyPressed(KEY_THREE))
+        pressedNode = 3;
+
+    if (IsKeyPressed(KEY_FOUR))
+        pressedNode = 4;
+
+    if (pressedNode != 0)
+    {
+        if (pressedNode == wiringSequence[wiringStep])
+        {
+            wiringStep++;
+
+            Burst(
+                {500, 305},
+                COL_GREEN,
+                8
+            );
+
+            if (wiringStep >= 4)
+            {
+                wiringSolved = true;
+                wiringStep = 0;
+
+                Burst(
+                    {500, 305},
+                    COL_CYAN,
+                    35
+                );
+
+                SetStatus(
+                    "DEEP SPACE ARRAY RESTORED"
+                );
+
+                state = PLAYING;
+            }
+            else
+            {
+                SetStatus(
+                    TextFormat(
+                        "SIGNAL PATH %d/4 LOCKED",
+                        wiringStep
+                    )
+                );
+            }
+        }
+        else
+        {
+            wiringStep = 0;
+
+            Burst(
+                {500, 305},
+                COL_DANGER,
+                15
+            );
+
+            SetStatus(
+                "SIGNAL ROUTING ERROR // PATH RESET"
+            );
                 }
             }
         }
@@ -1904,6 +2460,10 @@ int main()
             ClearBackground(COL_BG);
             DrawCrafting(player);
         }
+        else if (state == WIRING)
+        {
+            DrawWiringScreen();
+        } 
         else if (state == REPAIR)
         {
             ClearBackground(COL_BG);
@@ -1957,6 +2517,13 @@ int main()
             for (const auto& h : hazards)
                 if (h.active && !h.repaired && Dist(player.pos, h.pos) < 75)
                     nearInteract = true;
+                if (level == COMMUNICATIONS &&
+                    !wiringSolved &&
+                    AllRoomHazardsRepaired() &&
+                    Dist(player.pos, {720, 255}) < 120)
+                {
+                    nearInteract = true;
+}
 
             if (Dist(player.pos, {930, 310}) < 90)
                 nearInteract = true;
@@ -1991,6 +2558,8 @@ int main()
 
         EndDrawing();
     }
+    if (arcTexture.id > 0)
+    UnloadTexture(arcTexture);
 
     CloseWindow();
     return 0;
