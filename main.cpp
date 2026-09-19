@@ -97,6 +97,8 @@ struct Player
     bool welder;
     bool extinguisher;
     bool repairKit;
+    bool gunPart;
+    bool hybridWeapon;
 };
 
 struct Hazard
@@ -130,6 +132,7 @@ struct Drone
     int maxHealth;
     bool active;
     bool corrupted;
+    bool boss;
     float attackCooldown;
     float hitFlash;
 };
@@ -181,6 +184,14 @@ bool mapOpen = false;
 bool wiringSolved = false;
 bool finalArchiveRecovered = false;
 bool escapeReady = false;
+bool upperEngineGunPartFound = false;
+bool upperEngineCrafted = false;
+const Vector2 CRAFT_TABLE_POS = {405, 395};
+int currentLevel = CENTRAL_DECK;
+int commWave = 0;
+bool commCombatStarted = false;
+bool commBossSpawned = false;
+bool commCombatCleared = false;
 
 // ---------- Deep Space Array ----------
 int wiringStep = 0;
@@ -383,8 +394,28 @@ void AddSalvage(int index, Vector2 pos, int m, int c, int p, int d, int b, int c
     salvage[index] = {pos, m, c, p, d, b, co, false};
 }
 
+void ClearCombatDrones(){ for(auto& d:drones) d.active=false; }
+void SpawnCommWave(int wave){
+    ClearCombatDrones();
+    if(wave>=1&&wave<=3){
+        int count=wave+1;
+        for(int i=0;i<count&&i<8;i++){ Vector2 q={700.0f+(i%2)*150.0f,145.0f+(i/2)*95.0f}; drones[i]={q,{0,0},38.0f+wave*3.0f,3+wave*2,3+wave*2,true,true,false,1.3f+i*0.35f,0}; }
+        commWave=wave; SetStatus(TextFormat("COMMUNICATIONS // WAVE %d // HOSTILES: %d",wave,count));
+    }else if(wave==4){ drones[0]={{760,255},{0,0},43.0f,24,24,true,true,true,1.0f,0}; commWave=4; commBossSpawned=true; SetStatus("SIGNAL GUARDIAN // HOSTILE UNIT DETECTED"); }
+}
+bool CommunicationsEnemiesCleared(){ for(const auto& d:drones) if(d.active) return false; return true; }
+void UpdateCommunicationsCombat(){
+    if(currentLevel!=COMMUNICATIONS||!commCombatStarted||commCombatCleared) return;
+    if(!CommunicationsEnemiesCleared()) return;
+    if(commWave>=1&&commWave<3){SpawnCommWave(commWave+1);return;}
+    if(commWave==3&&!commBossSpawned){SpawnCommWave(4);return;}
+    if(commWave==4&&commBossSpawned){commCombatCleared=true;SetStatus("SIGNAL GUARDIAN DISABLED // ARRAY ACCESS RESTORED");Burst({760,255},COL_PURPLE,35);}
+}
+void StartCommunicationsCombat(){ if(currentLevel!=COMMUNICATIONS||commCombatStarted||commCombatCleared)return; commCombatStarted=true; commBossSpawned=false; SpawnCommWave(1); }
+
 void SpawnRoomContent(int level)
 {
+    currentLevel = level;
     ResetRoomEntities();
 
     // Every room gets environmental damage. The locations are deliberately
@@ -474,26 +505,11 @@ void SpawnRoomContent(int level)
             break;
     }
 
-    // More aggressive corrupted maintenance drones as the anomaly gains access.
-    int droneCount = std::min(3, 1 + level / 4);
-    for (int i = 0; i < 8; ++i) drones[i].active = false;
-
-    for (int i = 0; i < droneCount; ++i)
-    {
-        Vector2 spawn = {
-            690.0f + i * 90.0f,
-            150.0f + (i % 2) * 260.0f
-        };
-        drones[i] = {
-            spawn, {0,0},
-            34.0f + level * 1.5f,
-            3 + level / 3,
-            3 + level / 3,
-            true,
-            true,
-            1.8f + i * 0.6f,
-            0
-        };
+    ClearCombatDrones();
+    if(level==COMMUNICATIONS){ commWave=0; commCombatStarted=false; commBossSpawned=false; commCombatCleared=false; StartCommunicationsCombat(); }
+    else {
+        int droneCount=std::min(3,1+level/4);
+        for(int i=0;i<droneCount;i++){ Vector2 q={690.0f+i*90.0f,150.0f+(i%2)*260.0f}; drones[i]={q,{0,0},34.0f+level*1.5f,3+level/3,3+level/3,true,true,false,1.8f+i*0.6f,0}; }
     }
 }
 
@@ -601,6 +617,15 @@ void DrawRoomBase(int level)
             // Floor warning area.
             DrawHazardStripes({560, 425, 310, 25});
             DrawText("UPPER ENGINE // TURBINE CONTROL", 575, 455, 13, COL_GREEN);
+            DrawRectangle(330,355,150,78,COL_PANEL2);
+            DrawRectangleLines(330,355,150,78,COL_WARNING);
+            DrawRectangle(345,370,120,12,COL_METAL);
+            DrawLineEx({360,382},{360,423},7,COL_METAL);
+            DrawLineEx({450,382},{450,423},7,COL_METAL);
+            DrawText("FIELD FAB",365,392,11,COL_WARNING);
+            DrawText("[E] CRAFT",360,410,10,COL_GREEN);
+            if(!upperEngineGunPartFound){ float bob=sinf(gameTime*3.0f)*3.0f; DrawCircle(285,(int)(390+bob),19,WithAlpha(COL_PURPLE,45)); DrawRectangleRounded({267,375+bob,36,30},0.2f,5,COL_DARK_METAL); DrawRectangleLinesEx({267,375+bob,36,30},2,COL_PURPLE); DrawLineEx({274,382+bob},{296,398+bob},5,COL_METAL); DrawText("GUN PART",255,418,10,COL_PURPLE); }
+            else if(!upperEngineCrafted) DrawText("GUN PART SECURED",250,418,10,COL_GREEN);
             break;
 
         case WATER_TREATMENT:
@@ -1058,18 +1083,16 @@ void DrawDrone(const Drone& d)
 {
     if (!d.active) return;
 
-    DrawCircleV(d.pos, 18, COL_DARK_METAL);
-    DrawCircleLines((int)d.pos.x, (int)d.pos.y, 20, COL_DANGER);
-    DrawLine((int)d.pos.x - 10, (int)d.pos.y,
-             (int)d.pos.x + 10, (int)d.pos.y, COL_DANGER);
-    DrawCircle((int)d.pos.x, (int)d.pos.y, 4, COL_WARNING);
+    float radius=d.boss?30.0f:18.0f; Color ring=d.boss?COL_PURPLE:COL_DANGER;
+    DrawCircleV(d.pos,radius,COL_DARK_METAL); DrawCircleLines((int)d.pos.x,(int)d.pos.y,radius+2,ring); DrawCircleLines((int)d.pos.x,(int)d.pos.y,radius+8,WithAlpha(ring,80));
+    DrawLine((int)d.pos.x-(int)(radius*.55f),(int)d.pos.y,(int)d.pos.x+(int)(radius*.55f),(int)d.pos.y,ring); DrawCircle((int)d.pos.x,(int)d.pos.y,d.boss?7:4,COL_WARNING);
+    if(d.boss) DrawText("SIGNAL GUARDIAN",(int)d.pos.x-48,(int)d.pos.y-48,10,COL_PURPLE);
 
     if (d.hitFlash > 0)
         DrawCircleV(d.pos, 23, WithAlpha(COL_WHITE, 150));
 
-    DrawRectangle((int)d.pos.x - 18, (int)d.pos.y - 30, 36, 4, COL_DARK_METAL);
-    DrawRectangle((int)d.pos.x - 18, (int)d.pos.y - 30,
-                  (int)(36.0f * d.health / d.maxHealth), 4, COL_DANGER);
+    int barW=d.boss?60:36,barX=(int)d.pos.x-barW/2,barY=(int)d.pos.y-(d.boss?43:30);
+    DrawRectangle(barX,barY,barW,4,COL_DARK_METAL); DrawRectangle(barX,barY,(int)(barW*(float)d.health/d.maxHealth),4,d.boss?COL_PURPLE:COL_DANGER);
 }
 
 void DrawRobot(const Player& p)
@@ -1153,10 +1176,9 @@ void DrawRobot(const Player& p)
     DrawLineEx(elbow, hand, 7, COL_METAL);
     DrawCircleV(hand, 5, COL_DARK_METAL);
 
-    Vector2 wrenchTip = {hand.x + c * 14, hand.y + sn * 14};
-    DrawLineEx(hand, wrenchTip, 6, COL_METAL);
-    DrawCircleV(wrenchTip, 7, COL_WARNING);
-    DrawCircleV({wrenchTip.x - c * 3, wrenchTip.y - sn * 3}, 3, COL_DARK_METAL);
+    Vector2 weaponTip={hand.x+c*14,hand.y+sn*14}; DrawLineEx(hand,weaponTip,6,COL_METAL);
+    if(p.hybridWeapon){ DrawRectanglePro({weaponTip.x+c*12,weaponTip.y+sn*12,30,10},{15,5},-p.aimAngle*RAD2DEG,COL_DARK_METAL); DrawRectanglePro({weaponTip.x+c*8,weaponTip.y+sn*8,17,5},{8,2.5f},-p.aimAngle*RAD2DEG,COL_METAL); DrawCircleV(weaponTip,7,COL_WARNING); DrawLineEx(weaponTip,{weaponTip.x+c*27,weaponTip.y+sn*27},4,COL_CYAN); }
+    else { DrawCircleV(weaponTip,7,COL_WARNING); DrawCircleV({weaponTip.x-c*3,weaponTip.y-sn*3},3,COL_DARK_METAL); }
 
     if (p.meleeTimer > 0)
     {
@@ -1170,7 +1192,7 @@ void DrawRobot(const Player& p)
             DrawLineEx({x + cosf(a) * 28.0f, y + sinf(a) * 28.0f},
                        trail, 3.0f, WithAlpha(COL_WARNING, (unsigned char)(90 - i * 20)));
         }
-        DrawCircleV(wrenchTip, 10, WithAlpha(COL_WARNING, 80));
+        DrawCircleV(weaponTip, 10, WithAlpha(COL_WARNING, 80));
     }
 }
 
@@ -1199,8 +1221,8 @@ void DrawHUD(const Player& p, int level)
     DrawRectangle(365, 27, (int)(100.0f * p.energy / p.maxEnergy), 9, COL_CYAN);
 
     DrawText(TextFormat("TOOL: %s", ToolName(selectedTool)), 490, 12, 11, COL_CYAN);
-    DrawText(TextFormat("WRENCH %d/%d", p.wrenchDurability, p.wrenchMaxDurability),
-             490, 31, 10, COL_METAL);
+    DrawText(TextFormat("WRENCH %d/%d", p.wrenchDurability, p.wrenchMaxDurability),490,31,10,COL_METAL);
+    if(p.hybridWeapon) DrawText("HYBRID // F MELEE // G FIRE",490,45,9,COL_WARNING);
 
     DrawText(TextFormat("MET %d  CIR %d  PWR %d  DAT %d  BOT %d",
              metal, circuits, powerCells, data, botParts),
@@ -1208,7 +1230,8 @@ void DrawHUD(const Player& p, int level)
 
     DrawRectangle(45, 540, 910, 45, WithAlpha(COL_PANEL, 245));
     DrawText("WASD MOVE", 60, 555, 10, COL_DIM_GREEN);
-    DrawText("F WRENCH", 155, 555, 10, COL_GREEN);
+    DrawText("F MELEE", 155, 555, 10, COL_GREEN);
+    DrawText("G FIRE", 205, 555, 10, COL_WARNING);
     DrawText("E INTERACT", 245, 555, 10, COL_CYAN);
     DrawText("C CRAFT", 355, 555, 10, COL_WARNING);
     DrawText("TAB TOOLS", 435, 555, 10, COL_DIM_GREEN);
@@ -1353,55 +1376,16 @@ void DrawWiringScreen()
 }
 void DrawCrafting(const Player& p)
 {
-    DrawRectangle(105, 65, 790, 470, COL_PANEL);
-    DrawRectangleLines(105, 65, 790, 470, COL_GREEN);
-
-    DrawText("FIELD FABRICATION // XD-07", 140, 95, 24, COL_GREEN);
-    DrawText("Salvaged parts can be converted into tools and chassis upgrades.",
-             140, 130, 13, COL_DIM_GREEN);
-
-    const char* names[6] = {
-        "WELDER",
-        "FIRE EXTINGUISHER",
-        "REPAIR KIT",
-        "WRENCH MK-II",
-        "SERVO UPGRADE",
-        "ARMOR PLATING"
-    };
-
-    const char* costs[6] = {
-        "2 MET + 1 CIR",
-        "1 MET + 1 PWR",
-        "2 MET + 1 CIR",
-        "3 MET + 1 CIR + 1 BOT",
-        "3 MET + 2 CIR + 1 BOT",
-        "4 MET + 2 CIR + 2 BOT"
-    };
-
-    for (int i = 0; i < 6; ++i)
-    {
-        int y = 170 + i * 50;
-        bool selected = i == selectedCraft;
-        DrawRectangle(145, y, 480, 38,
-                      selected ? COL_DARK_GREEN : COL_PANEL2);
-        DrawRectangleLines(145, y, 480, 38,
-                           selected ? COL_GREEN : COL_DIM_GREEN);
-        DrawText(names[i], 160, y + 11, 13,
-                 selected ? COL_GREEN : COL_WHITE);
-        DrawText(costs[i], 400, y + 11, 11, COL_DIM_GREEN);
-    }
-
-    DrawText("1-6 SELECT", 670, 180, 12, COL_CYAN);
-    DrawText("ENTER CRAFT", 670, 210, 12, COL_GREEN);
-    DrawText("ESC CLOSE", 670, 240, 12, COL_DIM_GREEN);
-
-    DrawText(TextFormat("METAL: %d", metal), 670, 310, 13, COL_WHITE);
-    DrawText(TextFormat("CIRCUITS: %d", circuits), 670, 335, 13, COL_WHITE);
-    DrawText(TextFormat("POWER: %d", powerCells), 670, 360, 13, COL_WHITE);
-    DrawText(TextFormat("BOT PARTS: %d", botParts), 670, 385, 13, COL_WHITE);
-
-    DrawText("DESIGN NOTE", 140, 455, 11, COL_CYAN);
-    DrawText("The cube is teaching XD-07 how to rebuild the ship.", 140, 477, 13, COL_DIM_GREEN);
+    DrawRectangle(105,65,790,470,COL_PANEL); DrawRectangleLines(105,65,790,470,COL_GREEN);
+    DrawText("FIELD FABRICATION // XD-07",140,95,24,COL_GREEN);
+    DrawText("Build tools from salvage. Upper Engine contains a weapon prototype.",140,130,13,COL_DIM_GREEN);
+    const char* names[7]={"WELDER","FIRE EXTINGUISHER","REPAIR KIT","WRENCH MK-II","SERVO UPGRADE","ARMOR PLATING","WRENCH + GUN PART // HYBRID RIFLE"};
+    const char* costs[7]={"2 MET + 1 CIR","1 MET + 1 PWR","2 MET + 1 CIR","3 MET + 1 CIR + 1 BOT","3 MET + 2 CIR + 1 BOT","4 MET + 2 CIR + 2 BOT","1 WRENCH + 1 GUN PART"};
+    for(int i=0;i<7;i++){int y=158+i*44;bool sel=i==selectedCraft,sp=i==6;DrawRectangle(145,y,500,35,sel?(sp?WithAlpha(COL_PURPLE,55):COL_DARK_GREEN):COL_PANEL2);DrawRectangleLines(145,y,500,35,sel?(sp?COL_PURPLE:COL_GREEN):COL_DIM_GREEN);DrawText(names[i],158,y+10,11,sel?(sp?COL_PURPLE:COL_GREEN):COL_WHITE);DrawText(costs[i],430,y+10,10,sp?COL_PURPLE:COL_DIM_GREEN);}
+    DrawText("1-7 SELECT",680,175,12,COL_CYAN); DrawText("ENTER CRAFT",680,205,12,COL_GREEN); DrawText("ESC / C CLOSE",680,235,12,COL_DIM_GREEN);
+    DrawText(TextFormat("METAL: %d",metal),680,300,13,COL_WHITE); DrawText(TextFormat("CIRCUITS: %d",circuits),680,325,13,COL_WHITE); DrawText(TextFormat("POWER: %d",powerCells),680,350,13,COL_WHITE); DrawText(TextFormat("BOT PARTS: %d",botParts),680,375,13,COL_WHITE);
+    DrawText(TextFormat("GUN PART: %s",p.gunPart?"YES":"NO"),680,400,13,COL_PURPLE); DrawText(TextFormat("HYBRID: %s",p.hybridWeapon?"ONLINE":"NOT BUILT"),680,425,13,p.hybridWeapon?COL_GREEN:COL_DIM_GREEN);
+    DrawText("DESIGN NOTE",140,470,11,COL_CYAN); DrawText("The wrench becomes the core of a crude rifle-melee weapon.",140,492,12,COL_DIM_GREEN);
 }
 
 void DrawRepairScreen(const Hazard& h, const Player& p)
@@ -1642,6 +1626,62 @@ void UpdateDrones(float dt, Player& p)
     }
 }
 
+void HybridFire(Player& p)
+{
+    if (!p.hybridWeapon)
+    {
+        SetStatus("NO RANGED WEAPON // CRAFT IT IN UPPER ENGINE");
+        return;
+    }
+
+    if (p.energy < 1.0f)
+    {
+        SetStatus("LOW ENERGY // WEAPON LOCKED");
+        return;
+    }
+
+    p.energy -= 1.0f;
+
+    for (int i = 0; i < 8; ++i)
+    {
+        Vector2 q = {
+            p.pos.x + cosf(p.aimAngle) * (30 + i * 20),
+            p.pos.y + sinf(p.aimAngle) * (30 + i * 20)
+        };
+        SpawnParticle(q, {0, 0}, 0.12f, 3, COL_CYAN);
+    }
+
+    for (auto& d : drones)
+    {
+        if (!d.active) continue;
+
+        Vector2 r = {d.pos.x - p.pos.x, d.pos.y - p.pos.y};
+        float forward = r.x * cosf(p.aimAngle) + r.y * sinf(p.aimAngle);
+        float side = fabsf(r.x * sinf(p.aimAngle) - r.y * cosf(p.aimAngle));
+        float hitWidth = d.boss ? 28.0f : 20.0f;
+
+        if (forward > 15 && forward < 360 && side < hitWidth)
+        {
+            d.health -= d.boss ? 3 : 2;
+            d.hitFlash = 0.18f;
+            Burst(d.pos, COL_CYAN, 10);
+
+            if (d.health <= 0)
+            {
+                d.active = false;
+                botParts++;
+                metal++;
+                FloatTextAt(d.pos, "BOT PARTS +1", COL_CYAN);
+                SetStatus(d.boss ? "SIGNAL GUARDIAN DESTROYED"
+                                 : "RANGED HIT // UNIT DISABLED");
+                Burst(d.pos,
+                      d.boss ? COL_PURPLE : COL_CYAN,
+                      d.boss ? 30 : 18);
+            }
+        }
+    }
+}
+
 void MeleeAttack(Player& p)
 {
     if (p.meleeCooldown > 0) return;
@@ -1788,12 +1828,41 @@ bool CraftSelected(Player& p)
                 return true;
             }
             break;
+        
     }
 
     SetStatus("INSUFFICIENT SALVAGE");
     return false;
 }
+bool CraftWeaponAtTable(Player& p)
+{
+    if (p.hybridWeapon)
+    {
+        SetStatus("HYBRID WEAPON ALREADY ASSEMBLED");
+        return false;
+    }
 
+    if (!p.gunPart)
+    {
+        SetStatus("NEED THE UPPER ENGINE GUN PART");
+        return false;
+    }
+
+    if (p.wrenchDurability <= 0)
+    {
+        SetStatus("WRENCH BROKEN // REPAIR IT FIRST");
+        return false;
+    }
+
+    p.gunPart = false;
+    p.hybridWeapon = true;
+    upperEngineCrafted = true;
+
+    SetStatus("HYBRID RIFLE ASSEMBLED // MELEE + FIRE MODE ONLINE");
+    Burst(CRAFT_TABLE_POS, COL_PURPLE, 24);
+
+    return true;
+}
 // ---------- Story ----------
 void DrawDialogue(int page)
 {
@@ -1880,7 +1949,7 @@ bool RoomReadyToLeave(int level)
         return AllRoomHazardsRepaired() && metal >= 2;
 
     if (level == UPPER_ENGINE)
-        return AllRoomHazardsRepaired() && circuits >= 2;
+        return AllRoomHazardsRepaired() && upperEngineCrafted;
 
     if (level == WATER_TREATMENT)
         return AllRoomHazardsRepaired() && coolant >= 2;
@@ -1895,7 +1964,7 @@ bool RoomReadyToLeave(int level)
         return AllRoomHazardsRepaired() && powerCells >= 2;
 
     if (level == COMMUNICATIONS)
-        return AllRoomHazardsRepaired() && wiringSolved;
+        return AllRoomHazardsRepaired() && commCombatCleared && wiringSolved;
 
     if (level == ADMIN)
         return AllRoomHazardsRepaired() && data >= 6;
@@ -1915,16 +1984,18 @@ const char* ObjectiveForRoom(int level)
     {
         case CENTRAL_DECK: return "Stabilize the central deck and reach the lower engine.";
         case LOWER_ENGINE: return "Recover engine salvage and restore the lower reactor.";
-        case UPPER_ENGINE: return "Repair power distribution and secure the upper engine.";
+        case UPPER_ENGINE:
+            if(!upperEngineGunPartFound)return "Recover the gun part and bring it to the field fabrication table.";
+            if(!upperEngineCrafted)return "Combine the wrench and gun part at the field fabrication table.";
+            return "Hybrid weapon online. Restore the upper engine and proceed.";
         case WATER_TREATMENT: return "Restore coolant flow and collect coolant.";
         case CAFETERIA: return "Clear the mess hall and search for emergency supplies.";
         case MEDICAL: return "Recover XD-series parts from the medical storage bay.";
         case OXYGEN: return "Stabilize oxygen generation and recover power cells.";
         case COMMUNICATIONS:
-        if (!wiringSolved)
-        return "Restore the Deep Space Array and reconstruct the corrupted signal.";
-
-        return "Signal restored. Reach the exit.";
+            if(!commCombatCleared)return TextFormat("Defeat Communications combat waves // CURRENT: %d/4",commWave);
+            if(!wiringSolved)return "Restore the Deep Space Array and reconstruct the corrupted signal.";
+            return "Signal restored. Reach the exit.";
         case ADMIN: return "Recover command records and locate the final archive key.";
         case ARCHIVE: return "Recover the ALL-SPARK research package and launch.";
         default: return "Unknown objective.";
@@ -1986,7 +2057,8 @@ void ResetGame(Player& player, GameState& state, int& level)
         0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
         1, 25, 25,
         0, 0, 0,
-        false, false, false
+        false, false, false,
+        false, false
     };
 
     state = MENU;
@@ -2006,7 +2078,7 @@ void ResetGame(Player& player, GameState& state, int& level)
     mapOpen = false;
     wiringSolved = false;
     finalArchiveRecovered = false;
-    escapeReady = false;
+    escapeReady = false; upperEngineGunPartFound=false; upperEngineCrafted=false; commWave=0; commCombatStarted=false; commBossSpawned=false; commCombatCleared=false;
 
     metal = 0;
     circuits = 0;
@@ -2118,11 +2190,7 @@ else
             if (IsKeyPressed(KEY_M))
                 mapOpen = !mapOpen;
 
-            if (IsKeyPressed(KEY_C))
-            {
-                state = CRAFTING;
-                selectedCraft = 0;
-            }
+            if(IsKeyPressed(KEY_C)){if(level==UPPER_ENGINE&&Dist(player.pos,CRAFT_TABLE_POS)<95){state=CRAFTING;selectedCraft=upperEngineGunPartFound?6:0;}else SetStatus("NO FABRICATION TABLE IN RANGE");}
 
             if (IsKeyPressed(KEY_TAB))
             {
@@ -2179,15 +2247,15 @@ else
                 player.energy += 0.45f * dt;
                 player.energy = ClampF(player.energy, 0, player.maxEnergy);
 
-                UpdateHazards(dt, player);
-                UpdateDrones(dt, player);
-
-                if (IsKeyPressed(KEY_F))
-                    MeleeAttack(player);
+                UpdateHazards(dt, player); UpdateDrones(dt, player); UpdateCommunicationsCombat();
+                if(IsKeyPressed(KEY_F)) MeleeAttack(player);
+                if(IsKeyPressed(KEY_G)) HybridFire(player);
 
                 if (IsKeyPressed(KEY_E))
                 {
-                    bool handled = false;
+                    bool handled=false;
+                    if(level==UPPER_ENGINE&&!upperEngineGunPartFound&&Dist(player.pos,{285,390})<65){player.gunPart=true;upperEngineGunPartFound=true;SetStatus("GUN PART SECURED // TAKE IT TO THE FIELD FAB TABLE");Burst({285,390},COL_PURPLE,18);handled=true;}
+                    if(!handled&&level==UPPER_ENGINE&&Dist(player.pos,CRAFT_TABLE_POS)<95){state=CRAFTING;selectedCraft=6;handled=true;}
 
                     // Salvage interaction.
                     for (auto& s : salvage)
@@ -2214,9 +2282,8 @@ else
                     // The array becomes available only after all environmental
                     // hazards in Communications have been repaired.
                     if (!handled &&
-                    level == COMMUNICATIONS &&
-                    !wiringSolved &&
-                    AllRoomHazardsRepaired() &&
+                    level == COMMUNICATIONS && commCombatCleared &&
+                    !wiringSolved && AllRoomHazardsRepaired() &&
                     Dist(player.pos, {720, 255}) < 120)
                     {
                     wiringStep = 0;
@@ -2357,6 +2424,7 @@ if (!handled)
             if (IsKeyPressed(KEY_FOUR)) selectedCraft = 3;
             if (IsKeyPressed(KEY_FIVE)) selectedCraft = 4;
             if (IsKeyPressed(KEY_SIX)) selectedCraft = 5;
+            if (IsKeyPressed(KEY_SEVEN)) selectedCraft = 6;
 
             if (IsKeyPressed(KEY_ENTER))
                 CraftSelected(player);
@@ -2432,7 +2500,7 @@ if (!handled)
             DrawText("ENTER", 450, 330, 20, COL_GREEN);
             DrawText("BEGIN RECOVERY", 410, 360, 12, COL_DIM_GREEN);
             DrawText("Q QUIT GAME", 425, 395, 12, COL_DANGER);
-            DrawText("WASD MOVE   F WRENCH   E REPAIR / SALVAGE", 290, 430, 11, COL_DIM_GREEN);
+            DrawText("WASD MOVE   F MELEE   G FIRE   E INTERACT", 270, 430, 11, COL_DIM_GREEN);
             DrawText("C CRAFT   TAB TOOLS   M MAP", 350, 455, 11, COL_DIM_GREEN);
             DrawText("THE ZARIMAN IS NOT EMPTY.", 355, 500, 13, COL_WARNING);
         }
@@ -2524,6 +2592,10 @@ if (!handled)
                 {
                     nearInteract = true;
 }
+
+            if(level==COMMUNICATIONS&&commCombatCleared&&!wiringSolved&&AllRoomHazardsRepaired()&&Dist(player.pos,{720,255})<120) nearInteract=true;
+            if(level==UPPER_ENGINE&&!upperEngineGunPartFound&&Dist(player.pos,{285,390})<65) nearInteract=true;
+            if(level==UPPER_ENGINE&&Dist(player.pos,CRAFT_TABLE_POS)<95) nearInteract=true;
 
             if (Dist(player.pos, {930, 310}) < 90)
                 nearInteract = true;
