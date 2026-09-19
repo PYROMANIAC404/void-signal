@@ -12,7 +12,7 @@ const float ROOM_RIGHT = 955.0f;
 const float ROOM_TOP = 75.0f;
 const float ROOM_BOTTOM = 530.0f;
 
-// ---------- Palette ----------
+// ---------- Palette ----------(yo guys hows are u doing?)
 const Color COL_BG         = {5, 8, 10, 255};
 const Color COL_PANEL      = {10, 17, 20, 255};
 const Color COL_PANEL2     = {18, 29, 32, 255};
@@ -35,6 +35,7 @@ enum GameState
     DIALOGUE,
     PLAYING,
     CRAFTING,
+    WEAPON_CRAFTING,
     WIRING,
     REPAIR,
     PAUSE,
@@ -197,7 +198,7 @@ bool commCombatCleared = false;
 int wiringStep = 0;
 const int wiringSequence[4] = {1, 3, 2, 4};
 
-// ---------- Electrical Arc Sprite ----------
+//---------- Electrical Arc Sprite ----------
 Texture2D arcTexture = {0};
 int arcFrame = 0;
 float arcFrameTimer = 0.0f;
@@ -1376,16 +1377,131 @@ void DrawWiringScreen()
 }
 void DrawCrafting(const Player& p)
 {
-    DrawRectangle(105,65,790,470,COL_PANEL); DrawRectangleLines(105,65,790,470,COL_GREEN);
+    DrawRectangle(105,65,790,470,COL_PANEL);
+    DrawRectangleLines(105,65,790,470,COL_GREEN);
+
     DrawText("FIELD FABRICATION // XD-07",140,95,24,COL_GREEN);
-    DrawText("Build tools from salvage. Upper Engine contains a weapon prototype.",140,130,13,COL_DIM_GREEN);
-    const char* names[7]={"WELDER","FIRE EXTINGUISHER","REPAIR KIT","WRENCH MK-II","SERVO UPGRADE","ARMOR PLATING","WRENCH + GUN PART // HYBRID RIFLE"};
-    const char* costs[7]={"2 MET + 1 CIR","1 MET + 1 PWR","2 MET + 1 CIR","3 MET + 1 CIR + 1 BOT","3 MET + 2 CIR + 1 BOT","4 MET + 2 CIR + 2 BOT","1 WRENCH + 1 GUN PART"};
-    for(int i=0;i<7;i++){int y=158+i*44;bool sel=i==selectedCraft,sp=i==6;DrawRectangle(145,y,500,35,sel?(sp?WithAlpha(COL_PURPLE,55):COL_DARK_GREEN):COL_PANEL2);DrawRectangleLines(145,y,500,35,sel?(sp?COL_PURPLE:COL_GREEN):COL_DIM_GREEN);DrawText(names[i],158,y+10,11,sel?(sp?COL_PURPLE:COL_GREEN):COL_WHITE);DrawText(costs[i],430,y+10,10,sp?COL_PURPLE:COL_DIM_GREEN);}
-    DrawText("1-7 SELECT",680,175,12,COL_CYAN); DrawText("ENTER CRAFT",680,205,12,COL_GREEN); DrawText("ESC / C CLOSE",680,235,12,COL_DIM_GREEN);
-    DrawText(TextFormat("METAL: %d",metal),680,300,13,COL_WHITE); DrawText(TextFormat("CIRCUITS: %d",circuits),680,325,13,COL_WHITE); DrawText(TextFormat("POWER: %d",powerCells),680,350,13,COL_WHITE); DrawText(TextFormat("BOT PARTS: %d",botParts),680,375,13,COL_WHITE);
-    DrawText(TextFormat("GUN PART: %s",p.gunPart?"YES":"NO"),680,400,13,COL_PURPLE); DrawText(TextFormat("HYBRID: %s",p.hybridWeapon?"ONLINE":"NOT BUILT"),680,425,13,p.hybridWeapon?COL_GREEN:COL_DIM_GREEN);
-    DrawText("DESIGN NOTE",140,470,11,COL_CYAN); DrawText("The wrench becomes the core of a crude rifle-melee weapon.",140,492,12,COL_DIM_GREEN);
+    DrawText("Build tools from salvage. Upper Engine contains a weapon prototype.",
+             140,130,13,COL_DIM_GREEN);
+
+    const char* names[6] = {
+        "WELDER",
+        "FIRE EXTINGUISHER",
+        "REPAIR KIT",
+        "WRENCH MK-II",
+        "SERVO UPGRADE",
+        "ARMOR PLATING"
+    };
+
+    const char* costs[6] = {
+        "2 MET + 1 CIR",
+        "1 MET + 1 PWR",
+        "2 MET + 1 CIR",
+        "3 MET + 1 CIR + 1 BOT",
+        "3 MET + 2 CIR + 1 BOT",
+        "4 MET + 2 CIR + 2 BOT"
+    };
+
+    for (int i = 0; i < 6; ++i)
+    {
+        int y = 158 + i * 44;
+        bool selected = (i == selectedCraft);
+
+        DrawRectangle(
+            145, y, 500, 35,
+            selected ? COL_DARK_GREEN : COL_PANEL2
+        );
+
+        DrawRectangleLines(
+            145, y, 500, 35,
+            selected ? COL_GREEN : COL_DIM_GREEN
+        );
+
+        DrawText(
+            names[i],
+            158, y + 10, 11,
+            selected ? COL_GREEN : COL_WHITE
+        );
+
+        DrawText(
+            costs[i],
+            430, y + 10, 10,
+            selected ? COL_GREEN : COL_DIM_GREEN
+        );
+    }
+
+    DrawText("1-6 SELECT",680,175,12,COL_CYAN);
+    DrawText("ENTER CRAFT",680,205,12,COL_GREEN);
+    DrawText("ESC / C CLOSE",680,235,12,COL_DIM_GREEN);
+
+    DrawText(TextFormat("METAL: %d",metal),680,300,13,COL_WHITE);
+    DrawText(TextFormat("CIRCUITS: %d",circuits),680,325,13,COL_WHITE);
+    DrawText(TextFormat("POWER: %d",powerCells),680,350,13,COL_WHITE);
+    DrawText(TextFormat("BOT PARTS: %d",botParts),680,375,13,COL_WHITE);
+
+    DrawText("DESIGN NOTE",140,470,11,COL_CYAN);
+    DrawText("The wrench becomes the core of a crude rifle-melee weapon.",
+             140,492,12,COL_DIM_GREEN);
+}
+
+void DrawWeaponCrafting(const Player& p)
+{
+    DrawRectangle(140, 70, 720, 460, COL_PANEL);
+    DrawRectangleLines(140, 70, 720, 460, COL_PURPLE);
+
+    DrawText("FIELD FABRICATION // WEAPON TABLE",
+             175, 105, 24, COL_PURPLE);
+
+    DrawText("ASSEMBLY PROTOCOL",
+             175, 150, 14, COL_CYAN);
+
+    DrawRectangle(190, 190, 620, 170, COL_PANEL2);
+    DrawRectangleLines(190, 190, 620, 170, COL_METAL);
+
+    // Wrench
+    DrawRectangle(250, 245, 150, 35, COL_DARK_METAL);
+    DrawRectangleLines(250, 245, 150, 35, COL_METAL);
+    DrawText("WRENCH", 285, 257, 13, COL_WHITE);
+
+    // Gun part
+    DrawRectangle(600, 245, 150, 35, COL_DARK_METAL);
+    DrawRectangleLines(600, 245, 150, 35, COL_PURPLE);
+    DrawText("GUN PART", 630, 257, 13, COL_PURPLE);
+
+    // Connection
+    DrawLineEx({400, 262}, {600, 262}, 4, COL_CYAN);
+
+    DrawText("WRENCH + GUN PART",
+             350, 305, 15, COL_GREEN);
+
+    DrawText("HYBRID WEAPON",
+             395, 325, 13, COL_WARNING);
+
+    DrawText(
+        p.gunPart ? "GUN PART: SECURED" : "GUN PART: MISSING",
+        250, 390, 13,
+        p.gunPart ? COL_GREEN : COL_DANGER
+    );
+
+    DrawText(
+        p.wrenchDurability > 0 ? "WRENCH: READY" : "WRENCH: BROKEN",
+        550, 390, 13,
+        p.wrenchDurability > 0 ? COL_GREEN : COL_DANGER
+    );
+
+    if (p.hybridWeapon)
+    {
+        DrawText("HYBRID WEAPON ONLINE",
+                 350, 435, 16, COL_GREEN);
+    }
+    else
+    {
+        DrawText("[ENTER] ASSEMBLE",
+                 365, 435, 15, COL_GREEN);
+    }
+
+    DrawText("ESC = CANCEL",
+             700, 490, 11, COL_DIM_GREEN);
 }
 
 void DrawRepairScreen(const Hazard& h, const Player& p)
@@ -2190,8 +2306,11 @@ else
             if (IsKeyPressed(KEY_M))
                 mapOpen = !mapOpen;
 
-            if(IsKeyPressed(KEY_C)){if(level==UPPER_ENGINE&&Dist(player.pos,CRAFT_TABLE_POS)<95){state=CRAFTING;selectedCraft=upperEngineGunPartFound?6:0;}else SetStatus("NO FABRICATION TABLE IN RANGE");}
-
+            if (IsKeyPressed(KEY_C))
+            {
+    state = CRAFTING;
+    selectedCraft = 0;
+}
             if (IsKeyPressed(KEY_TAB))
             {
                 selectedTool = (selectedTool + 1) % 4;
@@ -2255,7 +2374,13 @@ else
                 {
                     bool handled=false;
                     if(level==UPPER_ENGINE&&!upperEngineGunPartFound&&Dist(player.pos,{285,390})<65){player.gunPart=true;upperEngineGunPartFound=true;SetStatus("GUN PART SECURED // TAKE IT TO THE FIELD FAB TABLE");Burst({285,390},COL_PURPLE,18);handled=true;}
-                    if(!handled&&level==UPPER_ENGINE&&Dist(player.pos,CRAFT_TABLE_POS)<95){state=CRAFTING;selectedCraft=6;handled=true;}
+                    if (!handled &&
+    level == UPPER_ENGINE &&
+    Dist(player.pos, CRAFT_TABLE_POS) < 95)
+{
+    state = WEAPON_CRAFTING;
+    handled = true;
+}
 
                     // Salvage interaction.
                     for (auto& s : salvage)
@@ -2279,7 +2404,7 @@ else
                     }
 
                     // Deep Space Array interaction.
-                    // The array becomes available only after all environmental
+                    // The array becomes available only after all environmental bcs then the game would feel simple
                     // hazards in Communications have been repaired.
                     if (!handled &&
                     level == COMMUNICATIONS && commCombatCleared &&
@@ -2456,6 +2581,21 @@ if (!handled)
                 }
             }
         }
+        else if (state == WEAPON_CRAFTING)
+{
+    if (IsKeyPressed(KEY_ESCAPE))
+    {
+        state = PLAYING;
+    }
+
+    if (IsKeyPressed(KEY_ENTER))
+    {
+        if (CraftWeaponAtTable(player))
+        {
+            state = PLAYING;
+        }
+    }
+}
         else if (state == PAUSE)
         {
             if (IsKeyPressed(KEY_ESCAPE))
@@ -2464,7 +2604,7 @@ if (!handled)
             if (IsKeyPressed(KEY_M))
                 mapOpen = !mapOpen;
 
-            // Restart the entire run from the beginning.
+            // Restart the entire run from the beginning.(for some reason this was hard)
             if (IsKeyPressed(KEY_R))
             {
                 ResetGame(player, state, level);
@@ -2524,10 +2664,15 @@ if (!handled)
             DrawDialogue(dialoguePage);
         }
         else if (state == CRAFTING)
-        {
-            ClearBackground(COL_BG);
-            DrawCrafting(player);
-        }
+{
+    ClearBackground(COL_BG);
+    DrawCrafting(player);
+}
+else if (state == WEAPON_CRAFTING)
+{
+    ClearBackground(COL_BG);
+    DrawWeaponCrafting(player);
+}
         else if (state == WIRING)
         {
             DrawWiringScreen();
@@ -2546,7 +2691,7 @@ if (!handled)
         }
         else
         {
-            // World-space camera shake. UI/HUD stays stable while impacts shake
+            // World-space camera shake. UI/HUD stays stable while impacts shake(fyi)
             // the room, robot and particles.
             float shakeAmount = cameraTrauma * 9.0f;
             Camera2D gameCamera = {0};
