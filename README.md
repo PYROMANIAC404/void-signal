@@ -86,7 +86,15 @@ I'm mainly using this project to experiment with:
 - Dialogue systems
 - Interaction systems
 - Building a complete game from scratch
-
+- 
+## 🚧 Current State(as of 19/09/202^)
+- added 5 more levels ( so 10 now)
+- added a crafting system
+- enemy bots
+- a wrench meele weapon
+- tools to fix hazards and damages on the ship
+- cool minigames( trust me bro)
+- 
 There are definitely things I want to improve, especially the visuals,
 audio, transitions and overall atmosphere.
 
