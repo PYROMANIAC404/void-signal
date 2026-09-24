@@ -34,8 +34,11 @@ There are also hazards throughout the ship, including fires, hull breaches, debr
 The further you go, the more the strange signal starts to make sense.
 
 ### Screenshots
-
+initial:
 *<img width="989" height="578" alt="Screenshot 2026-09-12 223934" src="https://github.com/user-attachments/assets/a4b64079-264c-4bf7-8e73-2addfd575f54" />
+final:
+<img width="1004" height="609" alt="Screenshot 2026-09-17 231113" src="https://github.com/user-attachments/assets/bc846fae-aa61-4784-8c3d-0fdd0e01e8c4" />
+
 .*
 
 ## Getting Started
