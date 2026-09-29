@@ -498,18 +498,11 @@ void SpawnRoomContent(int level)
             break;
 
         case ARCHIVE:
-            // Redesigned final room: a three-part research vault.
-            // Fire blocks the left approach, the breach guards the data dais,
-            // and the electrical fault locks the extraction console.
-            AddHazard(h++, HAZARD_FIRE, {300, 175}, 46, 1.0f);
-            AddHazard(h++, HAZARD_HULL_BREACH, {780, 180}, 52, 1.0f);
-            AddHazard(h++, HAZARD_ELECTRICAL, {760, 410}, 50, 1.0f);
-            AddHazard(h++, HAZARD_DEBRIS, {470, 345}, 44, 1.0f);
-
-            // ALL-SPARK package (must be collected) + secondary archive cache.
-            AddSalvage(0, {500, 180}, 1, 3, 0, 3, 0, 0);
-            AddSalvage(1, {300, 410}, 3, 2, 1, 4, 2, 0);
-            AddSalvage(2, {700, 300}, 2, 1, 1, 2, 0, 0);
+            AddHazard(h++, HAZARD_FIRE, {730, 180}, 45, 1.0f);
+            AddHazard(h++, HAZARD_HULL_BREACH, {860, 380}, 50, 1.0f);
+            AddHazard(h++, HAZARD_ELECTRICAL, {520, 410}, 48, 1.0f);
+            AddSalvage(0, {320, 190}, 2, 2, 1, 3, 1, 0);
+            AddSalvage(1, {570, 350}, 3, 2, 1, 4, 2, 0);
             break;
     }
 
@@ -1239,7 +1232,7 @@ void DrawHUD(const Player& p, int level)
     DrawRectangle(45, 540, 910, 45, WithAlpha(COL_PANEL, 245));
     DrawText("WASD MOVE", 60, 555, 10, COL_DIM_GREEN);
     DrawText("F MELEE", 155, 555, 10, COL_GREEN);
-    DrawText("LMB FIRE", 205, 555, 10, COL_WARNING);
+    DrawText("G FIRE", 205, 555, 10, COL_WARNING);
     DrawText("E INTERACT", 245, 555, 10, COL_CYAN);
     DrawText("C CRAFT", 355, 555, 10, COL_WARNING);
     DrawText("TAB TOOLS", 435, 555, 10, COL_DIM_GREEN);
@@ -1987,6 +1980,62 @@ bool CraftWeaponAtTable(Player& p)
     return true;
 }
 // ---------- Story ----------
+void DrawWrappedText(const char* text, int x, int y, int fontSize,
+                     int maxWidth, int lineSpacing, Color color)
+{
+    char line[512] = "";
+    char word[128] = "";
+
+    int lineY = y;
+    int lineLength = 0;
+
+    const char* ptr = text;
+
+    while (*ptr)
+    {
+        int i = 0;
+
+        // Read one word
+        while (*ptr && *ptr != ' ' && i < 127)
+        {
+            word[i++] = *ptr++;
+        }
+
+        word[i] = '\0';
+
+        // Skip spaces
+        while (*ptr == ' ')
+            ptr++;
+
+        int wordWidth = MeasureText(word, fontSize);
+        int spaceWidth = MeasureText(" ", fontSize);
+
+        // Would this word exceed the allowed width?
+        if (lineLength > 0 &&
+            MeasureText(line, fontSize) + spaceWidth + wordWidth > maxWidth)
+        {
+            DrawText(line, x, lineY, fontSize, color);
+
+            lineY += lineSpacing;
+
+            line[0] = '\0';
+            lineLength = 0;
+        }
+
+        // Add the word to the current line
+        if (lineLength > 0)
+        {
+            std::strcat(line, " ");
+        }
+
+        std::strcat(line, word);
+        lineLength++;
+    }
+
+    // Draw the final line
+    if (lineLength > 0)
+        DrawText(line, x, lineY, fontSize, color);
+}
 void DrawDialogue(int page)
 {
     const char* title = "";
@@ -2037,7 +2086,15 @@ void DrawDialogue(int page)
     DrawText("ZARIMAN // RECOVERY LOG", 135, 135, 16, COL_CYAN);
     DrawText(title, 135, 185, 27, COL_GREEN);
     DrawText(body1, 135, 245, 20, COL_WHITE);
-    DrawText(body2, 135, 285, 17, COL_DIM_GREEN);
+    DrawWrappedText(
+    body2,
+    135,
+    285,
+    17,
+    700,
+    25,
+    COL_DIM_GREEN
+);
     DrawText("ENTER TO CONTINUE", 650, 450, 13, COL_GREEN);
 }
 
@@ -2220,7 +2277,13 @@ void ResetGame(Player& player, GameState& state, int& level)
 int main()
 {
     InitWindow(SCREEN_W, SCREEN_H, "VOID//SIGNAL");
-    arcTexture = LoadTexture("assets/arc_sheet.png");
+    // Load the sprite relative to the executable location.
+const char* arcPath = TextFormat(
+    "%s/assets/arc_sheet.png",
+    GetApplicationDirectory()
+);
+
+arcTexture = LoadTexture(arcPath);
 
 if (arcTexture.id == 0)
 {
@@ -2375,7 +2438,7 @@ else
 
                 UpdateHazards(dt, player); UpdateDrones(dt, player); UpdateCommunicationsCombat();
                 if(IsKeyPressed(KEY_F)) MeleeAttack(player);
-                if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) HybridFire(player);
+                if(IsKeyPressed(KEY_G)) HybridFire(player);
 
                 if (IsKeyPressed(KEY_E))
                 {
@@ -2401,15 +2464,6 @@ else
                             data += s.data;
                             botParts += s.botParts;
                             coolant += s.coolant;
-
-                            // The first Archive salvage node is the ALL-SPARK research package.
-                            // Recovering it arms the Archive exit instead of waiting for RewardRoom().
-                            if (level == ARCHIVE && Dist(s.pos, {500, 180}) < 2)
-                            {
-                                finalArchiveRecovered = true;
-                                FloatTextAt(s.pos, "ALL-SPARK PACKAGE SECURED", COL_PURPLE);
-                                SetStatus("ALL-SPARK RESEARCH PACKAGE RECOVERED // ARCHIVE EXIT UNLOCKED");
-                            }
 
                             SetStatus(TextFormat(
                                 "SALVAGED: MET %d / CIR %d / PWR %d / DAT %d / BOT %d",
@@ -2656,7 +2710,7 @@ if (!handled)
             DrawText("ENTER", 450, 330, 20, COL_GREEN);
             DrawText("BEGIN RECOVERY", 410, 360, 12, COL_DIM_GREEN);
             DrawText("Q QUIT GAME", 425, 395, 12, COL_DANGER);
-            DrawText("WASD MOVE   F MELEE   LMB FIRE   E INTERACT", 270, 430, 11, COL_DIM_GREEN);
+            DrawText("WASD MOVE   F MELEE   G FIRE   E INTERACT", 270, 430, 11, COL_DIM_GREEN);
             DrawText("C CRAFT   TAB TOOLS   M MAP", 350, 455, 11, COL_DIM_GREEN);
             DrawText("THE ZARIMAN IS NOT EMPTY.", 355, 500, 13, COL_WARNING);
         }
